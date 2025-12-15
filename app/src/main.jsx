@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Location from "./pages/Location";
 import Review from "./pages/Review";
 import RestaurantViewer from "./pages/RestaurantViewer.jsx";
+import Admin from "./pages/Admin.jsx";
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: "location", element: <Location /> },
       { path: "review", element: <Review /> },
+      { path: "admin", element: <Admin /> },
       { path: "restaurant", element: <RestaurantViewer /> },
     ],
   },

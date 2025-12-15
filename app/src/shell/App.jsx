@@ -45,6 +45,8 @@ export default function App() {
 
   const isReviewerOrAdmin = role === "reviewer" || role === "admin";
 
+  const isAdmin = role === "admin";
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b">
@@ -57,6 +59,11 @@ export default function App() {
             {isReviewerOrAdmin && (
               <Link to="/review" className="hover:underline">
                 Review
+              </Link>
+            )}
+            {isAdmin && (
+              <Link to="/admin" className="hover:underline">
+                Admin
               </Link>
             )}
             <span className="text-slate-600">{user.email}</span>
