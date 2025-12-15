@@ -29,72 +29,97 @@ export default function Location() {
   const [activeItem, setActiveItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [progressByItem, setProgressByItem] = useState({});
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!partnerId || !locationId) return;
 
     (async () => {
       setLoading(true);
+      setError("");
 
-      const locSnap = await getDoc(
-        doc(db, "partners", partnerId, "locations", locationId)
-      );
-      if (!locSnap.exists()) {
-        setLocation(null);
-        setLoading(false);
-        return;
-      }
-      const loc = { id: locSnap.id, ...locSnap.data() };
-      setLocation(loc);
-
-      const bId = loc.brandIds?.[0];
-      setBrandId(bId);
-
-      const itemsSnap = await getDocs(
-        collection(db, "brands", bId, "menuItems")
-      );
-      const allItems = itemsSnap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-      setItems(allItems);
-
-      const progressMap = {};
-
-      const qSubs = query(
-        collection(db, "submissions"),
-        where("locationId", "==", locationId),
-        where("partnerId", "==", partnerId)
-      );
-      const subsSnap = await getDocs(qSubs);
-
-      const approvedMap = {};
-      subsSnap.forEach((docSnap) => {
-        const s = docSnap.data();
-        if (s.status !== "approved") return;
-        if (s.brandId !== bId) return;
-        const key = `${s.itemId}|${s.requirementId}`;
-        approvedMap[key] = true;
-      });
-
-      for (const item of allItems) {
-        const reqSnap = await getDocs(
-          collection(db, "brands", bId, "menuItems", item.id, "requirements")
+      try {
+        const locSnap = await getDoc(
+          doc(db, "partners", partnerId, "locations", locationId)
         );
-        const total = reqSnap.size;
-        let approved = 0;
+        if (!locSnap.exists()) {
+          setLocation(null);
+          setLoading(false);
+          return;
+        }
+        const loc = { id: locSnap.id, ...locSnap.data() };
+        setLocation(loc);
 
-        reqSnap.forEach((reqDoc) => {
-          const key = `${item.id}|${reqDoc.id}`;
-          if (approvedMap[key]) approved++;
+        const bId = loc.brandIds?.[0];
+        if (!bId) {
+          setBrandId(null);
+          setItems([]);
+          setProgressByItem({});
+          setLoading(false);
+          return;
+        }
+        setBrandId(bId);
+
+        const itemsSnap = await getDocs(
+          collection(db, "brands", bId, "menuItems")
+        );
+        const allItems = itemsSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setItems(allItems);
+
+        const progressMap = {};
+
+        const qSubs = query(
+          collection(db, "submissions"),
+          where("locationId", "==", locationId),
+          where("partnerId", "==", partnerId)
+        );
+        const subsSnap = await getDocs(qSubs);
+
+        const approvedMap = {};
+        subsSnap.forEach((docSnap) => {
+          const s = docSnap.data();
+          if (s.status !== "approved") return;
+          if (s.brandId !== bId) return;
+          const key = `${s.itemId}|${s.requirementId}`;
+          approvedMap[key] = true;
         });
 
-        const percentage = total > 0 ? Math.round((approved / total) * 100) : 0;
-        progressMap[item.id] = { total, approved, percentage };
-      }
+        for (const item of allItems) {
+          const reqSnap = await getDocs(
+            collection(
+              db,
+              "brands",
+              bId,
+              "menuItems",
+              item.id,
+              "requirements"
+            )
+          );
+          const total = reqSnap.size;
+          let approved = 0;
 
-      setProgressByItem(progressMap);
-      setLoading(false);
+          reqSnap.forEach((reqDoc) => {
+            const key = `${item.id}|${reqDoc.id}`;
+            if (approvedMap[key]) approved++;
+          });
+
+          const percentage =
+            total > 0 ? Math.round((approved / total) * 100) : 0;
+          progressMap[item.id] = { total, approved, percentage };
+        }
+
+        setProgressByItem(progressMap);
+        setLoading(false);
+      } catch (e) {
+        console.error(e);
+        setError(
+          "Fehler beim Laden der Standort-Daten. Bitte versuchen Sie es später noch einmal."
+        );
+        setLoading(false);
+      }
     })();
   }, [partnerId, locationId]);
 
@@ -107,6 +132,12 @@ export default function Location() {
     <div>
       <h1 className="text-2xl font-semibold">{location.name}</h1>
       <p className="text-slate-600 mb-4">{location.address}</p>
+
+      {error && (
+        <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
 
       <div className="flex gap-2 mb-4">
         {CATEGORIES.map((c) => (
