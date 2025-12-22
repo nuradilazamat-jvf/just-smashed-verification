@@ -25,6 +25,8 @@ export default function Dashboard() {
 
       try {
         const user = auth.currentUser;
+        const token = await user.getIdTokenResult(true);
+        console.log("CLAIMS:", token.claims);
         if (!user) {
           setLoading(false);
           return;
@@ -70,6 +72,7 @@ export default function Dashboard() {
         setLoading(false);
       } catch (e) {
         console.error(e);
+        console.log("uid", auth.currentUser?.uid, "email", auth.currentUser?.email);
         setError(
           "Fehler beim Laden der Daten. Bitte versuchen Sie es später noch einmal."
         );

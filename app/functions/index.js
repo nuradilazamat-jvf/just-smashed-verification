@@ -4,21 +4,14 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-async function assertIsAdmin(request) {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Not authenticated.");
-  }
-
-  const callerUid = request.auth.uid;
-  const userDoc = await admin.firestore().doc(`users/${callerUid}`).get();
-
-  if (!userDoc.exists || userDoc.data().role !== "admin") {
-    throw new HttpsError("permission-denied", "Only admins can create users.");
-  }
+function assertCallerIsAdmin(request) {
+  const role = request.auth?.token?.role || null;
+  if (!request.auth) throw new HttpsError("unauthenticated", "Not authenticated.");
+  if (role !== "admin") throw new HttpsError("permission-denied", "Only admins can create users.");
 }
 
 exports.adminCreateUser = onCall({ region: "us-central1" }, async (request) => {
-  await assertIsAdmin(request);
+  assertCallerIsAdmin(request);
 
   const data = request.data || {};
 
@@ -27,14 +20,10 @@ exports.adminCreateUser = onCall({ region: "us-central1" }, async (request) => {
   const partnerId = data.partnerId ? String(data.partnerId).trim() : null;
   const locationIdsRaw = Array.isArray(data.locationIds) ? data.locationIds : [];
 
-  if (!email) {
-    throw new HttpsError("invalid-argument", "Email is required.");
-  }
+  if (!email) throw new HttpsError("invalid-argument", "Email is required.");
 
   const allowedRoles = ["partner", "reviewer", "admin"];
-  if (!allowedRoles.includes(role)) {
-    throw new HttpsError("invalid-argument", "Invalid role.");
-  }
+  if (!allowedRoles.includes(role)) throw new HttpsError("invalid-argument", "Invalid role.");
 
   const locationIds =
     role === "partner"
@@ -44,32 +33,32 @@ exports.adminCreateUser = onCall({ region: "us-central1" }, async (request) => {
   if (role === "partner" && !partnerId) {
     throw new HttpsError("invalid-argument", "partnerId is required for partner role.");
   }
+  if (role === "partner" && locationIds.length === 0) {
+    throw new HttpsError("invalid-argument", "locationIds is required for partner role.");
+  }
 
   const tempPassword =
     Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4);
 
   try {
-    const userRecord = await admin.auth().createUser({
-      email,
-      password: tempPassword,
-    });
-
+    const userRecord = await admin.auth().createUser({ email, password: tempPassword });
     const uid = userRecord.uid;
+
+    await admin.auth().setCustomUserClaims(uid, {
+      role,
+      ...(role === "partner" ? { partnerId, locationIds } : {}),
+    });
 
     const profile = {
       email,
       role,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(role === "partner" ? { partnerId, locationIds } : {}),
     };
-
-    if (role === "partner") {
-      profile.partnerId = partnerId;
-      profile.locationIds = locationIds;
-    }
 
     await admin.firestore().doc(`users/${uid}`).set(profile, { merge: true });
 
-    return { uid, tempPassword };
+    return { uid };
   } catch (e) {
     logger.error("adminCreateUser error:", e);
 
