@@ -24,6 +24,10 @@ export default function VerifyModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [claimsRole, setClaimsRole] = useState(null);
+
+  const canUpload = claimsRole === "partner";
+
   useEffect(() => {
     if (!brandId || !partnerId || !locationId || !item?.id) return;
 
@@ -34,15 +38,16 @@ export default function VerifyModal({
       setError("");
 
       try {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const token = await currentUser.getIdTokenResult(true);
+          if (!cancelled) setClaimsRole(token?.claims?.role || null);
+        } else {
+          if (!cancelled) setClaimsRole(null);
+        }
+
         const reqSnap = await getDocs(
-          collection(
-            db,
-            "brands",
-            brandId,
-            "menuItems",
-            item.id,
-            "requirements"
-          )
+          collection(db, "brands", brandId, "menuItems", item.id, "requirements")
         );
         const reqs = reqSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
@@ -125,11 +130,15 @@ export default function VerifyModal({
     }));
 
     try {
-      await currentUser.getIdToken(true);
-
-      console.log("AUTH uid:", currentUser.uid);
-      console.log("SDK projectId:", storage.app.options.projectId);
-      console.log("SDK bucket:", storage.app.options.storageBucket);
+      const token = await currentUser.getIdTokenResult(true);
+      const role = token?.claims?.role || null;
+      if (role !== "partner") {
+        setUploadState((prev) => ({
+          ...prev,
+          [reqId]: { uploading: false, error: "Upload ist nur für Partner erlaubt." },
+        }));
+        return;
+      }
 
       const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
       const fileName = `${Date.now()}_${currentUser.uid}.${ext}`;
@@ -137,11 +146,9 @@ export default function VerifyModal({
       const storagePath = `brands/${brandId}/items/${item.id}/requirements/${reqId}/partners/${partnerId}/locations/${locationId}/${fileName}`;
       const storageRef = ref(storage, storagePath);
 
-      console.log("Uploading file to:", storagePath);
       await uploadBytes(storageRef, file);
 
       const downloadUrl = await getDownloadURL(storageRef);
-      console.log("Download URL:", downloadUrl);
 
       const docRef = await addDoc(collection(db, "submissions"), {
         brandId,
@@ -181,10 +188,6 @@ export default function VerifyModal({
       }));
     } catch (e) {
       console.error("Upload failed:", e);
-      console.log("code:", e?.code);
-      console.log("message:", e?.message);
-      console.log("serverResponse:", e?.serverResponse);
-
       setUploadState((prev) => ({
         ...prev,
         [reqId]: {
@@ -313,47 +316,62 @@ export default function VerifyModal({
                   </div>
 
                   <div className="flex flex-col gap-3">
-                    <div className="border border-dashed rounded-xl px-4 py-4 bg-white text-center text-sm text-slate-600">
-                      <div className="font-medium mb-2">Upload photo</div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) =>
-                          handleFileChange(req.id, e.target.files?.[0] || null)
-                        }
-                        className="text-xs"
-                      />
-                      {upload.error && (
-                        <div className="mt-2 text-xs text-red-600">
-                          {upload.error}
-                        </div>
-                      )}
-                      <button
-                        onClick={() => handleUpload(req.id)}
-                        disabled={upload.uploading}
-                        className="mt-3 inline-flex items-center justify-center px-3 py-1.5 rounded bg-black text-white text-xs hover:bg-slate-800 disabled:opacity-60"
-                      >
-                        {upload.uploading ? "Uploading…" : "Save & submit"}
-                      </button>
+                    {canUpload ? (
+                      <div className="border border-dashed rounded-xl px-4 py-4 bg-white text-center text-sm text-slate-600">
+                        <div className="font-medium mb-2">Upload photo</div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) =>
+                            handleFileChange(req.id, e.target.files?.[0] || null)
+                          }
+                          className="text-xs"
+                        />
+                        {upload.error && (
+                          <div className="mt-2 text-xs text-red-600">
+                            {upload.error}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => handleUpload(req.id)}
+                          disabled={upload.uploading}
+                          className="mt-3 inline-flex items-center justify-center px-3 py-1.5 rounded bg-black text-white text-xs hover:bg-slate-800 disabled:opacity-60"
+                        >
+                          {upload.uploading ? "Uploading…" : "Save & submit"}
+                        </button>
 
-                      {sub?.fileName && (
-                        <div className="mt-2 text-xs text-slate-500">
-                          Last file:{" "}
-                          <span className="font-mono">{sub.fileName}</span>
+                        {sub?.fileName && (
+                          <div className="mt-2 text-xs text-slate-500">
+                            Last file:{" "}
+                            <span className="font-mono">{sub.fileName}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="border rounded-xl px-4 py-4 bg-white text-sm text-slate-600">
+                        <div className="font-medium">Upload disabled</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Upload ist nur für Partner verfügbar.
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {sub?.photoUrl && (
                       <div>
                         <div className="text-xs text-slate-500 mb-1">
-                          Your last uploaded photo
+                          Partner photo
                         </div>
                         <img
                           src={sub.photoUrl}
                           alt="uploaded"
                           className="w-full rounded-lg bg-slate-100 object-cover"
                         />
+                      </div>
+                    )}
+
+                    {!sub?.photoUrl && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        No partner photo URL in this submission.
                       </div>
                     )}
                   </div>
