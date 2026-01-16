@@ -1,23 +1,36 @@
-import { Outlet, Link, useNavigate } from "react-router-dom";
+import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { auth, db } from "../firebase";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 export default function App() {
+  const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
+
   const nav = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
+      setAuthReady(true);
+
       if (!u) {
         setUser(null);
         setRole(null);
-        nav("/login");
+
+        if (location.pathname !== "/login") {
+          nav("/login", { replace: true });
+        }
         return;
       }
+
       setUser(u);
+
+      if (location.pathname === "/login") {
+        nav("/", { replace: true });
+      }
 
       try {
         const snap = await getDoc(doc(db, "users", u.uid));
@@ -27,10 +40,27 @@ export default function App() {
         setRole(null);
       }
     });
+
     return () => unsub();
-  }, [nav]);
+  }, [nav, location.pathname]);
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-slate-50">
+        Loading…
+      </div>
+    );
+  }
 
   if (!user) {
+    if (location.pathname === "/login") {
+      return (
+        <div className="min-h-screen bg-slate-50">
+          <Outlet />
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen grid place-items-center bg-slate-50">
         Loading…
@@ -40,11 +70,10 @@ export default function App() {
 
   const logout = async () => {
     await signOut(auth);
-    nav("/login");
+    nav("/login", { replace: true });
   };
 
   const isReviewerOrAdmin = role === "reviewer" || role === "admin";
-
   const isAdmin = role === "admin";
 
   return (
@@ -76,6 +105,7 @@ export default function App() {
           </nav>
         </div>
       </header>
+
       <main className="max-w-6xl mx-auto px-4 py-6">
         <Outlet />
       </main>
